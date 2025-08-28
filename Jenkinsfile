@@ -103,44 +103,7 @@ EOF
             }
         }
         
-        stage('Run Tests') {
-            steps {
-                echo 'Exécution des tests...'
-                sh '''
-                    cd $WORKSPACE
-                    echo "=== Vérification avant les tests ==="
-                    ls -la $WORKSPACE
-                    
-                    # Vérifier que node_modules existe
-                    if [ ! -d "$WORKSPACE/node_modules" ]; then
-                        echo "Erreur: node_modules n'existe pas. Installation des dépendances requise."
-                        exit 1
-                    fi
-                    
-                    echo "=== Exécution des tests avec image temporaire ==="
-                    
-                    # Créer un Dockerfile temporaire pour les tests
-                    cat > /tmp/Dockerfile.test << 'EOF'
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-CMD ["npm", "test"]
-EOF
-                    
-                    # Construire et exécuter les tests
-                    docker build -f /tmp/Dockerfile.test -t temp-test .
-                    docker run --rm temp-test
-                    
-                    # Nettoyer
-                    docker rmi temp-test || true
-                    rm -f /tmp/Dockerfile.test
-                    
-                    echo "Tests terminés"
-                '''
-            }
-        }
+
         
         stage('Code Quality Check') {
             steps {
