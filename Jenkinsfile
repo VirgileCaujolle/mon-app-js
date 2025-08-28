@@ -212,7 +212,13 @@ EOF
                 script {
                     try {
                         sh '''
+                            # Diagnostic du conteneur
+                            echo "=== DIAGNOSTIC CONTENEUR ==="
+                            docker ps -a | grep mon-app-js-container || echo "Conteneur non trouvé"
+                            docker logs mon-app-js-container || echo "Pas de logs"
+                            
                             # Test de connectivité
+                            echo "=== TEST DE CONNECTIVITÉ ==="
                             curl -f http://localhost:3000/health || exit 1
                             echo "Application déployée avec succès et répond correctement"
                         '''
