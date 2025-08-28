@@ -11,26 +11,35 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo 'Récupération du code source...'
-                deleteDir()
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']],
-                    userRemoteConfigs: [[url: 'https://github.com/VirgileCaujolle/mon-app-js.git']]
-                ])
+                script {
+                    try {
+                        checkout scm
+                    } catch (Exception e) {
+                        echo "Erreur lors du checkout SCM, tentative alternative..."
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: env.BRANCH_NAME ?: '*/main']],
+                            userRemoteConfigs: [[
+                                url: 'https://github.com/VirgileCaujolle/mon-app-js.git'
+                            ]]
+                        ])
+                    }
+                }
+                // Vérifier que nous sommes dans un repository Git
+                sh '''
+                    echo "Vérification du repository Git..."
+                    git status
+                    git log --oneline -5
+                '''
             }
         }
         
         stage('Install Dependencies') {
             steps {
                 echo 'Installation des dépendances Node.js...'
-                script {
-                    sh '''
-                        echo "Vérification de la présence du package.json..."
-                        ls -la package.json
-                        echo "Installation des dépendances..."
-                        docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "npm ci"
-                    '''
-                }
+                sh '''
+                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "npm ci"
+                '''
             }
         }
         
@@ -76,22 +85,17 @@ pipeline {
         stage('Deploy') {
             steps {
                 echo 'Déploiement de l\'application...'
-                script {
-                    sh '''
-                        echo "Arrêt du conteneur existant s'il existe..."
-                        docker stop ${CONTAINER_NAME} || true
-                        docker rm ${CONTAINER_NAME} || true
-                        
-                        echo "Démarrage du nouveau conteneur..."
-                        docker run -d --name ${CONTAINER_NAME} -p 3000:3000 ${IMAGE_NAME}
-                        
-                        echo "Attente du démarrage de l'application..."
-                        sleep 15
-                        
-                        echo "Vérification que le conteneur est en cours d'exécution..."
-                        docker ps | grep ${CONTAINER_NAME}
-                    '''
-                }
+                sh '''
+                    # Arrêter le conteneur existant s'il existe
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm ${CONTAINER_NAME} || true
+                    
+                    # Démarrer le nouveau conteneur
+                    docker run -d --name ${CONTAINER_NAME} -p 3000:3000 ${IMAGE_NAME}
+                    
+                    # Attendre que l'application démarre
+                    sleep 10
+                '''
             }
         }
         
@@ -101,26 +105,13 @@ pipeline {
                 script {
                     try {
                         sh '''
-                            echo "Test de connectivité sur le health endpoint..."
-                            for i in {1..5}; do
-                                if curl -f http://localhost:3000/health; then
-                                    echo "Application déployée avec succès et répond correctement"
-                                    exit 0
-                                else
-                                    echo "Tentative $i/5 échouée, nouvelle tentative dans 5 secondes..."
-                                    sleep 5
-                                fi
-                            done
-                            echo "Health check échoué après 5 tentatives"
-                            exit 1
+                            # Test de connectivité
+                            curl -f http://localhost:3000/health || exit 1
+                            echo "Application déployée avec succès et répond correctement"
                         '''
                     } catch (Exception e) {
                         currentBuild.result = 'UNSTABLE'
                         echo "Warning: Health check failed: ${e.getMessage()}"
-                        sh '''
-                            echo "Logs du conteneur pour diagnostic:"
-                            docker logs ${CONTAINER_NAME} || true
-                        '''
                     }
                 }
             }

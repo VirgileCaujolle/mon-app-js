@@ -1,70 +1,71 @@
 # Configuration Jenkins pour mon-app-js
 
-## Étapes de configuration dans Jenkins
+## Étapes de configuration du pipeline Jenkins
 
 ### 1. Créer un nouveau job
-1. Aller dans Jenkins Dashboard
-2. Cliquer sur "New Item"
-3. Nom du job : `mon-app-js-pipeline`
-4. Type : `Pipeline`
-5. Cliquer "OK"
+
+1. Dans Jenkins, cliquez sur **"Nouveau Item"**
+2. Nom : `mon-app-js-pipeline`
+3. Type : **Pipeline**
+4. Cliquez sur **OK**
 
 ### 2. Configuration du Pipeline
-Dans la section **Pipeline** :
 
-**Definition** : `Pipeline script from SCM`
+Dans l'onglet **Configuration** :
 
-**SCM** : `Git`
+#### Section General
+- ✅ **GitHub project** : `https://github.com/VirgileCaujolle/mon-app-js`
 
-**Repository URL** : `https://github.com/VirgileCaujolle/mon-app-js.git`
+#### Section Build Triggers
+- ✅ **GitHub hook trigger for GITScm polling**
+- ✅ **Poll SCM** : `H/5 * * * *` (toutes les 5 minutes)
 
-**Credentials** : (laisser vide si repository public)
+#### Section Pipeline
+- **Definition** : `Pipeline script from SCM`
+- **SCM** : `Git`
+- **Repository URL** : `https://github.com/VirgileCaujolle/mon-app-js.git`
+- **Credentials** : 
+  - Si repository public : laisser vide
+  - Si repository privé : ajouter credentials GitHub
+- **Branches to build** : `*/main`
+- **Script Path** : `Jenkinsfile`
 
-**Branch Specifier** : `*/main`
+### 3. Vérifications avant de lancer
 
-**Script Path** : `Jenkinsfile`
+Assurez-vous que :
+- [ ] Jenkins peut accéder à Internet
+- [ ] Docker est accessible depuis Jenkins
+- [ ] Le repository GitHub est accessible
+- [ ] Les plugins suivants sont installés :
+  - Git plugin
+  - Pipeline plugin
+  - Docker Pipeline plugin
+  - NodeJS plugin
 
-### 3. Configuration des triggers (optionnel)
-Dans **Build Triggers** :
-- ☑ `GitHub hook trigger for GITScm polling`
-- ☑ `Poll SCM` : `H/5 * * * *` (toutes les 5 minutes)
+### 4. Test de la configuration
 
-### 4. Permissions Docker
-Assurez-vous que Jenkins a accès à Docker :
+1. Cliquez sur **"Construire maintenant"**
+2. Observez les logs dans **"Console Output"**
+3. Vérifiez que toutes les étapes se déroulent correctement
 
+## Résolution des problèmes courants
+
+### Erreur "not in a git directory"
 ```bash
-# Dans le conteneur Jenkins ou sur le serveur Jenkins
-sudo usermod -aG docker jenkins
-sudo systemctl restart jenkins
+# Dans le conteneur Jenkins, vérifier Git
+docker exec -it jenkins-server bash
+git --version
+git config --list
 ```
 
-### 5. Plugins requis
-Vérifiez que ces plugins sont installés :
-- Git plugin
-- Pipeline plugin
-- Docker Pipeline plugin
+### Problème d'accès Docker
+```bash
+# Vérifier l'accès Docker depuis Jenkins
+docker exec -it jenkins-server docker ps
+```
 
-### 6. Variables d'environnement (optionnel)
-Dans **Environment Variables** :
-- `DOCKER_HOST` : si Docker n'est pas local
-- `NODE_ENV` : `production`
-
-## Test de la configuration
-
-1. Cliquer sur "Build Now"
-2. Vérifier les logs dans "Console Output"
-3. L'application devrait être accessible sur `http://localhost:3000`
-
-## Résolution de problèmes
-
-### Erreur Git
-- Vérifier que l'URL du repository est correcte
-- Vérifier les permissions d'accès au repository
-
-### Erreur Docker
-- Vérifier que Docker est installé et accessible
-- Vérifier les permissions Docker pour l'utilisateur Jenkins
-
-### Erreur de port
-- Vérifier qu'aucun autre service n'utilise le port 3000
-- Modifier le port dans le Jenkinsfile si nécessaire
+### Problème de permissions
+```bash
+# Vérifier les permissions du socket Docker
+ls -la /var/run/docker.sock
+```
