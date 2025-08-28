@@ -56,58 +56,48 @@ pipeline {
                         exit 1
                     fi
                     
-                    # Essayer d'abord directement dans le workspace
-                    echo "=== TENTATIVE 1: Installation directe dans le workspace ==="
+                    # NOUVELLE APPROCHE: Créer une image temporaire et copier les fichiers
+                    echo "=== SOLUTION: Utilisation d'un conteneur avec COPY au lieu de volume mount ==="
+                    
+                    # Créer un Dockerfile temporaire pour l'installation
+                    cat > /tmp/Dockerfile.npm << 'EOF'
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --verbose
+COPY . .
+CMD ["echo", "Installation terminée"]
+EOF
+                    
+                    # Construire l'image avec tous les fichiers
+                    echo "Construction de l'image temporaire pour npm install..."
                     cd $WORKSPACE
-                    if docker run --rm -v "$WORKSPACE":/app -w /app node:18-alpine sh -c "ls -la /app && npm install"; then
-                        echo "✓ Installation réussie directement dans le workspace"
-                    else
-                        echo "✗ Échec de l'installation directe, essai avec répertoire temporaire..."
-                        
-                        # Fallback: utiliser un répertoire temporaire
-                        echo "=== TENTATIVE 2: Répertoire temporaire ==="
-                        TEMP_DIR=$(mktemp -d)
-                        echo "Répertoire temporaire créé: $TEMP_DIR"
-                        
-                        # Copier TOUS les fichiers nécessaires
-                        cp -r $WORKSPACE/. $TEMP_DIR/
-                        
-                        echo "Contenu du répertoire temporaire:"
-                        ls -la $TEMP_DIR
-                        
-                        echo "Vérification de package.json dans le répertoire temporaire:"
-                        if [ -f "$TEMP_DIR/package.json" ]; then
-                            echo "✓ package.json trouvé dans le répertoire temporaire"
-                        else
-                            echo "✗ package.json NON trouvé dans le répertoire temporaire"
-                            exit 1
-                        fi
-                        
-                        # Installation avec des permissions appropriées
-                        echo "Installation des dépendances:"
-                        docker run --rm -v "$TEMP_DIR":/app -w /app node:18-alpine sh -c "
-                            echo 'Contenu de /app:' && ls -la /app &&
-                            echo 'Contenu de package.json:' && cat /app/package.json &&
-                            npm install --verbose
-                        "
-                        
-                        # Copier les résultats vers le workspace
-                        if [ -d "$TEMP_DIR/node_modules" ]; then
-                            echo "Copie de node_modules vers le workspace..."
-                            cp -r $TEMP_DIR/node_modules $WORKSPACE/
-                        fi
-                        
-                        if [ -f "$TEMP_DIR/package-lock.json" ]; then
-                            echo "Copie de package-lock.json vers le workspace..."
-                            cp $TEMP_DIR/package-lock.json $WORKSPACE/
-                        fi
-                        
-                        # Nettoyer
-                        rm -rf $TEMP_DIR
-                    fi
+                    docker build -f /tmp/Dockerfile.npm -t temp-npm-install .
+                    
+                    # Extraire node_modules du conteneur
+                    echo "Extraction de node_modules..."
+                    CONTAINER_ID=$(docker create temp-npm-install)
+                    docker cp $CONTAINER_ID:/app/node_modules $WORKSPACE/ || echo "node_modules non trouvé"
+                    docker cp $CONTAINER_ID:/app/package-lock.json $WORKSPACE/ || echo "package-lock.json non trouvé"
+                    docker rm $CONTAINER_ID
+                    
+                    # Nettoyer l'image temporaire
+                    docker rmi temp-npm-install || true
+                    
+                    # Nettoyer le Dockerfile temporaire
+                    rm -f /tmp/Dockerfile.npm
                     
                     echo "=== VÉRIFICATION FINALE ==="
                     ls -la $WORKSPACE
+                    
+                    if [ -d "$WORKSPACE/node_modules" ]; then
+                        echo "✓ node_modules installé avec succès"
+                        echo "Nombre de packages installés: $(ls $WORKSPACE/node_modules | wc -l)"
+                    else
+                        echo "✗ node_modules NON trouvé après installation"
+                        exit 1
+                    fi
+                    
                     echo "Installation terminée avec succès"
                 '''
             }
@@ -127,13 +117,25 @@ pipeline {
                         exit 1
                     fi
                     
-                    echo "=== Exécution des tests ==="
-                    docker run --rm -v "$WORKSPACE":/app -w /app node:18-alpine sh -c "
-                        echo 'Vérification de l\\'environnement de test:' &&
-                        ls -la /app &&
-                        echo 'Lancement des tests...' &&
-                        npm test
-                    "
+                    echo "=== Exécution des tests avec image temporaire ==="
+                    
+                    # Créer un Dockerfile temporaire pour les tests
+                    cat > /tmp/Dockerfile.test << 'EOF'
+FROM node:18-alpine
+WORKDIR /app
+COPY . .
+CMD ["npm", "test"]
+EOF
+                    
+                    # Construire et exécuter les tests
+                    docker build -f /tmp/Dockerfile.test -t temp-test .
+                    docker run --rm temp-test
+                    
+                    # Nettoyer
+                    docker rmi temp-test || true
+                    rm -f /tmp/Dockerfile.test
+                    
+                    echo "Tests terminés"
                 '''
             }
         }
@@ -151,13 +153,25 @@ pipeline {
                         exit 0
                     fi
                     
-                    echo "Vérification de la syntaxe JavaScript..."
-                    docker run --rm -v "$WORKSPACE":/app -w /app node:18-alpine sh -c "
-                        echo 'Fichiers JavaScript trouvés:' &&
-                        find src -name '*.js' -type f &&
-                        echo 'Vérification de la syntaxe...' &&
-                        find src -name '*.js' -type f -exec node -c {} \\;
-                    "
+                    echo "Vérification de la syntaxe JavaScript avec image temporaire..."
+                    
+                    # Créer un Dockerfile temporaire pour la vérification
+                    cat > /tmp/Dockerfile.quality << 'EOF'
+FROM node:18-alpine
+WORKDIR /app
+COPY . .
+RUN find src -name "*.js" -type f -exec node -c {} \\;
+CMD ["echo", "Vérification de qualité terminée"]
+EOF
+                    
+                    # Construire et exécuter la vérification
+                    docker build -f /tmp/Dockerfile.quality -t temp-quality .
+                    docker run --rm temp-quality
+                    
+                    # Nettoyer
+                    docker rmi temp-quality || true
+                    rm -f /tmp/Dockerfile.quality
+                    
                     echo "Vérification de la qualité terminée"
                 '''
             }
@@ -186,11 +200,25 @@ pipeline {
                         exit 0
                     fi
                     
-                    echo "Vérification des vulnérabilités de sécurité..."
-                    docker run --rm -v "$WORKSPACE":/app -w /app node:18-alpine sh -c "
-                        echo 'Lancement de l\\'audit de sécurité...' &&
-                        npm audit --audit-level=moderate || echo 'Vulnérabilités détectées mais build continue'
-                    "
+                    echo "Vérification des vulnérabilités de sécurité avec image temporaire..."
+                    
+                    # Créer un Dockerfile temporaire pour l'audit
+                    cat > /tmp/Dockerfile.security << 'EOF'
+FROM node:18-alpine
+WORKDIR /app
+COPY . .
+RUN npm audit --audit-level=moderate || echo "Vulnérabilités détectées mais build continue"
+CMD ["echo", "Audit de sécurité terminé"]
+EOF
+                    
+                    # Construire et exécuter l'audit
+                    docker build -f /tmp/Dockerfile.security -t temp-security .
+                    docker run --rm temp-security
+                    
+                    # Nettoyer
+                    docker rmi temp-security || true
+                    rm -f /tmp/Dockerfile.security
+                    
                     echo "Analyse de sécurité terminée"
                 '''
             }
