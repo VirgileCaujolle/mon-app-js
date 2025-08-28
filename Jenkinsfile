@@ -38,6 +38,13 @@ pipeline {
             steps {
                 echo 'Installation des dépendances Node.js...'
                 sh '''
+                    echo "DEBUG: Contenu du workspace:"
+                    ls -la $WORKSPACE
+                    echo "DEBUG: Vérification de package.json:"
+                    cat $WORKSPACE/package.json || echo "ERREUR: package.json introuvable"
+                    echo "DEBUG: Test du conteneur Docker:"
+                    docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "ls -la /app && cat /app/package.json"
+                    echo "DEBUG: Installation des dépendances:"
                     docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "npm install"
                 '''
             }
