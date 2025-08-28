@@ -38,7 +38,7 @@ pipeline {
             steps {
                 echo 'Installation des dépendances Node.js...'
                 sh '''
-                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "npm install"
+                    docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "npm install"
                 '''
             }
         }
@@ -47,7 +47,7 @@ pipeline {
             steps {
                 echo 'Exécution des tests...'
                 sh '''
-                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "npm test"
+                    docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "npm test"
                 '''
             }
         }
@@ -57,7 +57,7 @@ pipeline {
                 echo 'Vérification de la qualité du code...'
                 sh '''
                     echo "Vérification de la syntaxe JavaScript..."
-                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "find src -name '*.js' -exec node -c {} \\;"
+                    docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "find src -name '*.js' -exec node -c {} \\;"
                     echo "Vérification terminée"
                 '''
             }
@@ -77,7 +77,7 @@ pipeline {
                 echo 'Analyse de sécurité...'
                 sh '''
                     echo "Vérification des dépendances..."
-                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "npm audit --audit-level=high || true"
+                    docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "npm audit --audit-level=high || true"
                 '''
             }
         }
