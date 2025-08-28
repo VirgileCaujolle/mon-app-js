@@ -48,7 +48,10 @@ pipeline {
                     
                     # Copier les fichiers dans un répertoire temporaire et lancer npm install
                     TEMP_DIR=$(mktemp -d)
-                    cp -r $WORKSPACE/* $TEMP_DIR/
+                    cp -r $WORKSPACE/. $TEMP_DIR/
+                    
+                    echo "Vérification du contenu du répertoire temporaire:"
+                    ls -la $TEMP_DIR
                     
                     echo "Installation des dépendances dans le répertoire temporaire:"
                     docker run --rm -v $TEMP_DIR:/app -w /app node:18-alpine sh -c "npm install"
