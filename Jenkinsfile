@@ -38,14 +38,29 @@ pipeline {
             steps {
                 echo 'Installation des dépendances Node.js...'
                 sh '''
-                    echo "DEBUG: Contenu du workspace:"
+                    # Nettoyer tous les conteneurs et volumes Docker existants
+                    docker system prune -f || true
+                    docker volume prune -f || true
+                    
+                    # Vérifier que package.json existe
+                    echo "Contenu du workspace:"
                     ls -la $WORKSPACE
-                    echo "DEBUG: Vérification de package.json:"
-                    cat $WORKSPACE/package.json || echo "ERREUR: package.json introuvable"
-                    echo "DEBUG: Test du conteneur Docker:"
-                    docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "ls -la /app && cat /app/package.json"
-                    echo "DEBUG: Installation des dépendances:"
-                    docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "npm install"
+                    
+                    # Copier les fichiers dans un répertoire temporaire et lancer npm install
+                    TEMP_DIR=$(mktemp -d)
+                    cp -r $WORKSPACE/* $TEMP_DIR/
+                    
+                    echo "Installation des dépendances dans le répertoire temporaire:"
+                    docker run --rm -v $TEMP_DIR:/app -w /app node:18-alpine sh -c "npm install"
+                    
+                    # Copier node_modules et package-lock.json vers le workspace
+                    cp -r $TEMP_DIR/node_modules $WORKSPACE/ || true
+                    cp $TEMP_DIR/package-lock.json $WORKSPACE/ || true
+                    
+                    # Nettoyer
+                    rm -rf $TEMP_DIR
+                    
+                    echo "Installation terminée"
                 '''
             }
         }
@@ -54,6 +69,7 @@ pipeline {
             steps {
                 echo 'Exécution des tests...'
                 sh '''
+                    cd $WORKSPACE
                     docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "npm test"
                 '''
             }
@@ -63,6 +79,7 @@ pipeline {
             steps {
                 echo 'Vérification de la qualité du code...'
                 sh '''
+                    cd $WORKSPACE
                     echo "Vérification de la syntaxe JavaScript..."
                     docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "find src -name '*.js' -exec node -c {} \\;"
                     echo "Vérification terminée"
@@ -74,6 +91,7 @@ pipeline {
             steps {
                 echo 'Construction de l\'image Docker...'
                 sh '''
+                    cd $WORKSPACE
                     docker build -t ${IMAGE_NAME} .
                 '''
             }
@@ -83,6 +101,7 @@ pipeline {
             steps {
                 echo 'Analyse de sécurité...'
                 sh '''
+                    cd $WORKSPACE
                     echo "Vérification des dépendances..."
                     docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "npm audit --audit-level=high || true"
                 '''
