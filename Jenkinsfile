@@ -120,23 +120,31 @@ pipeline {
     
     post {
         always {
-            echo 'Nettoyage des ressources temporaires...'
-            sh '''
-                # Nettoyer les images Docker non utilisées
-                docker image prune -f || true
-            '''
+            script {
+                try {
+                    echo 'Nettoyage des ressources temporaires...'
+                    sh 'docker image prune -f || true'
+                } catch (Exception e) {
+                    echo "Nettoyage ignoré: ${e.getMessage()}"
+                }
+            }
         }
         success {
             echo 'Pipeline exécuté avec succès!'
             echo "Application accessible sur: http://localhost:3000"
         }
         failure {
-            echo 'Le pipeline a échoué!'
-            sh '''
-                # Arrêter le conteneur en cas d'échec
-                docker stop ${CONTAINER_NAME} || true
-                docker rm ${CONTAINER_NAME} || true
-            '''
+            script {
+                try {
+                    echo 'Le pipeline a échoué!'
+                    sh '''
+                        docker stop ${CONTAINER_NAME} || true
+                        docker rm ${CONTAINER_NAME} || true
+                    '''
+                } catch (Exception e) {
+                    echo "Nettoyage d'échec ignoré: ${e.getMessage()}"
+                }
+            }
         }
     }
 }
