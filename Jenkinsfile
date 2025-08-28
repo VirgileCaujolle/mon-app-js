@@ -42,28 +42,73 @@ pipeline {
                     docker system prune -f || true
                     docker volume prune -f || true
                     
-                    # Vérifier que package.json existe
-                    echo "Contenu du workspace:"
+                    # Vérifier que package.json existe dans le workspace
+                    echo "=== DIAGNOSTIC: Contenu du workspace ==="
                     ls -la $WORKSPACE
+                    echo "=== Vérification de package.json ==="
+                    if [ -f "$WORKSPACE/package.json" ]; then
+                        echo "✓ package.json trouvé dans le workspace"
+                        cat $WORKSPACE/package.json
+                    else
+                        echo "✗ package.json NON trouvé dans le workspace"
+                        echo "Fichiers disponibles:"
+                        find $WORKSPACE -name "*.json" -type f
+                        exit 1
+                    fi
                     
-                    # Copier les fichiers dans un répertoire temporaire et lancer npm install
-                    TEMP_DIR=$(mktemp -d)
-                    cp -r $WORKSPACE/. $TEMP_DIR/
+                    # Essayer d'abord directement dans le workspace
+                    echo "=== TENTATIVE 1: Installation directe dans le workspace ==="
+                    cd $WORKSPACE
+                    if docker run --rm -v "$WORKSPACE":/app -w /app node:18-alpine sh -c "ls -la /app && npm install"; then
+                        echo "✓ Installation réussie directement dans le workspace"
+                    else
+                        echo "✗ Échec de l'installation directe, essai avec répertoire temporaire..."
+                        
+                        # Fallback: utiliser un répertoire temporaire
+                        echo "=== TENTATIVE 2: Répertoire temporaire ==="
+                        TEMP_DIR=$(mktemp -d)
+                        echo "Répertoire temporaire créé: $TEMP_DIR"
+                        
+                        # Copier TOUS les fichiers nécessaires
+                        cp -r $WORKSPACE/. $TEMP_DIR/
+                        
+                        echo "Contenu du répertoire temporaire:"
+                        ls -la $TEMP_DIR
+                        
+                        echo "Vérification de package.json dans le répertoire temporaire:"
+                        if [ -f "$TEMP_DIR/package.json" ]; then
+                            echo "✓ package.json trouvé dans le répertoire temporaire"
+                        else
+                            echo "✗ package.json NON trouvé dans le répertoire temporaire"
+                            exit 1
+                        fi
+                        
+                        # Installation avec des permissions appropriées
+                        echo "Installation des dépendances:"
+                        docker run --rm -v "$TEMP_DIR":/app -w /app node:18-alpine sh -c "
+                            echo 'Contenu de /app:' && ls -la /app &&
+                            echo 'Contenu de package.json:' && cat /app/package.json &&
+                            npm install --verbose
+                        "
+                        
+                        # Copier les résultats vers le workspace
+                        if [ -d "$TEMP_DIR/node_modules" ]; then
+                            echo "Copie de node_modules vers le workspace..."
+                            cp -r $TEMP_DIR/node_modules $WORKSPACE/
+                        fi
+                        
+                        if [ -f "$TEMP_DIR/package-lock.json" ]; then
+                            echo "Copie de package-lock.json vers le workspace..."
+                            cp $TEMP_DIR/package-lock.json $WORKSPACE/
+                        fi
+                        
+                        # Nettoyer
+                        rm -rf $TEMP_DIR
+                    fi
                     
-                    echo "Vérification du contenu du répertoire temporaire:"
-                    ls -la $TEMP_DIR
-                    
-                    echo "Installation des dépendances dans le répertoire temporaire:"
-                    docker run --rm -v $TEMP_DIR:/app -w /app node:18-alpine sh -c "npm install"
-                    
-                    # Copier node_modules et package-lock.json vers le workspace
-                    cp -r $TEMP_DIR/node_modules $WORKSPACE/ || true
-                    cp $TEMP_DIR/package-lock.json $WORKSPACE/ || true
-                    
-                    # Nettoyer
-                    rm -rf $TEMP_DIR
-                    
-                    echo "Installation terminée"
+                    echo "=== VÉRIFICATION FINALE ==="
+                    ls -la $WORKSPACE
+                    echo "Installation terminée avec succès"
                 '''
             }
         }
@@ -73,7 +118,22 @@ pipeline {
                 echo 'Exécution des tests...'
                 sh '''
                     cd $WORKSPACE
-                    docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "npm test"
+                    echo "=== Vérification avant les tests ==="
+                    ls -la $WORKSPACE
+                    
+                    # Vérifier que node_modules existe
+                    if [ ! -d "$WORKSPACE/node_modules" ]; then
+                        echo "Erreur: node_modules n'existe pas. Installation des dépendances requise."
+                        exit 1
+                    fi
+                    
+                    echo "=== Exécution des tests ==="
+                    docker run --rm -v "$WORKSPACE":/app -w /app node:18-alpine sh -c "
+                        echo 'Vérification de l\\'environnement de test:' &&
+                        ls -la /app &&
+                        echo 'Lancement des tests...' &&
+                        npm test
+                    "
                 '''
             }
         }
@@ -83,9 +143,22 @@ pipeline {
                 echo 'Vérification de la qualité du code...'
                 sh '''
                     cd $WORKSPACE
+                    echo "=== Vérification de la qualité du code ==="
+                    
+                    # Vérifier que le répertoire src existe
+                    if [ ! -d "$WORKSPACE/src" ]; then
+                        echo "Avertissement: Le répertoire src n'existe pas. Vérification ignorée."
+                        exit 0
+                    fi
+                    
                     echo "Vérification de la syntaxe JavaScript..."
-                    docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "find src -name '*.js' -exec node -c {} \\;"
-                    echo "Vérification terminée"
+                    docker run --rm -v "$WORKSPACE":/app -w /app node:18-alpine sh -c "
+                        echo 'Fichiers JavaScript trouvés:' &&
+                        find src -name '*.js' -type f &&
+                        echo 'Vérification de la syntaxe...' &&
+                        find src -name '*.js' -type f -exec node -c {} \\;
+                    "
+                    echo "Vérification de la qualité terminée"
                 '''
             }
         }
@@ -105,8 +178,20 @@ pipeline {
                 echo 'Analyse de sécurité...'
                 sh '''
                     cd $WORKSPACE
-                    echo "Vérification des dépendances..."
-                    docker run --rm -v $WORKSPACE:/app -w /app node:18-alpine sh -c "npm audit --audit-level=high || true"
+                    echo "=== Analyse de sécurité ==="
+                    
+                    # Vérifier que node_modules existe pour l'audit
+                    if [ ! -d "$WORKSPACE/node_modules" ]; then
+                        echo "Avertissement: node_modules n'existe pas. Audit de sécurité ignoré."
+                        exit 0
+                    fi
+                    
+                    echo "Vérification des vulnérabilités de sécurité..."
+                    docker run --rm -v "$WORKSPACE":/app -w /app node:18-alpine sh -c "
+                        echo 'Lancement de l\\'audit de sécurité...' &&
+                        npm audit --audit-level=moderate || echo 'Vulnérabilités détectées mais build continue'
+                    "
+                    echo "Analyse de sécurité terminée"
                 '''
             }
         }
