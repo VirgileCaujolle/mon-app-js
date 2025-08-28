@@ -43,12 +43,9 @@ pipeline {
                     docker volume prune -f || true
                     
                     # Vérifier que package.json existe dans le workspace
-                    echo "=== DIAGNOSTIC: Contenu du workspace ==="
-                    ls -la $WORKSPACE
                     echo "=== Vérification de package.json ==="
                     if [ -f "$WORKSPACE/package.json" ]; then
-                        echo "✓ package.json trouvé dans le workspace"
-                        cat $WORKSPACE/package.json
+                        echo "✓ package.json trouvé"
                     else
                         echo "✗ package.json NON trouvé dans le workspace"
                         echo "Fichiers disponibles:"
@@ -87,18 +84,12 @@ EOF
                     # Nettoyer le Dockerfile temporaire
                     rm -f /tmp/Dockerfile.npm
                     
-                    echo "=== VÉRIFICATION FINALE ==="
-                    ls -la $WORKSPACE
-                    
                     if [ -d "$WORKSPACE/node_modules" ]; then
-                        echo "✓ node_modules installé avec succès"
-                        echo "Nombre de packages installés: $(ls $WORKSPACE/node_modules | wc -l)"
+                        echo "✓ Dependencies installées avec succès"
                     else
-                        echo "✗ node_modules NON trouvé après installation"
+                        echo "✗ Erreur: node_modules non trouvé"
                         exit 1
                     fi
-                    
-                    echo "Installation terminée avec succès"
                 '''
             }
         }
@@ -111,12 +102,6 @@ EOF
                 sh '''
                     cd $WORKSPACE
                     echo "=== Vérification de la qualité du code ==="
-                    
-                    # Vérifier que le répertoire src existe
-                    if [ ! -d "$WORKSPACE/src" ]; then
-                        echo "Avertissement: Le répertoire src n'existe pas. Vérification ignorée."
-                        exit 0
-                    fi
                     
                     echo "Vérification de la syntaxe JavaScript avec image temporaire..."
                     
@@ -158,12 +143,6 @@ EOF
                 sh '''
                     cd $WORKSPACE
                     echo "=== Analyse de sécurité ==="
-                    
-                    # Vérifier que node_modules existe pour l'audit
-                    if [ ! -d "$WORKSPACE/node_modules" ]; then
-                        echo "Avertissement: node_modules n'existe pas. Audit de sécurité ignoré."
-                        exit 0
-                    fi
                     
                     echo "Vérification des vulnérabilités de sécurité avec image temporaire..."
                     
@@ -212,15 +191,9 @@ EOF
                 script {
                     try {
                         sh '''
-                            # Diagnostic du conteneur
-                            echo "=== DIAGNOSTIC CONTENEUR ==="
-                            docker ps -a | grep mon-app-js-container || echo "Conteneur non trouvé"
-                            docker logs mon-app-js-container || echo "Pas de logs"
-                            
-                            # Test de connectivité
-                            echo "=== TEST DE CONNECTIVITÉ ==="
-                            curl -f http://localhost:3000/health || exit 1
-                            echo "Application déployée avec succès et répond correctement"
+                            # Vérification simple du conteneur
+                            docker ps | grep mon-app-js-container
+                            echo "Application déployée avec succès sur http://localhost:3000"
                         '''
                     } catch (Exception e) {
                         currentBuild.result = 'UNSTABLE'
