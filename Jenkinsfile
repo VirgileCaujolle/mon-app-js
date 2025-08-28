@@ -1,0 +1,123 @@
+pipeline {
+    agent any
+    
+    environment {
+        APP_NAME = 'mon-app-js'
+        CONTAINER_NAME = 'mon-app-js-container'
+        IMAGE_NAME = 'mon-app-js:latest'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Récupération du code source...'
+                checkout scm
+            }
+        }
+        
+        stage('Install Dependencies') {
+            steps {
+                echo 'Installation des dépendances Node.js...'
+                sh '''
+                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "npm ci"
+                '''
+            }
+        }
+        
+        stage('Run Tests') {
+            steps {
+                echo 'Exécution des tests...'
+                sh '''
+                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "npm test"
+                '''
+            }
+        }
+        
+        stage('Code Quality Check') {
+            steps {
+                echo 'Vérification de la qualité du code...'
+                sh '''
+                    echo "Vérification de la syntaxe JavaScript..."
+                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "find src -name '*.js' -exec node -c {} \\;"
+                    echo "Vérification terminée"
+                '''
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                echo 'Construction de l\'image Docker...'
+                sh '''
+                    docker build -t ${IMAGE_NAME} .
+                '''
+            }
+        }
+        
+        stage('Security Scan') {
+            steps {
+                echo 'Analyse de sécurité...'
+                sh '''
+                    echo "Vérification des dépendances..."
+                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "npm audit --audit-level=high || true"
+                '''
+            }
+        }
+        
+        stage('Deploy') {
+            steps {
+                echo 'Déploiement de l\'application...'
+                sh '''
+                    # Arrêter le conteneur existant s'il existe
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm ${CONTAINER_NAME} || true
+                    
+                    # Démarrer le nouveau conteneur
+                    docker run -d --name ${CONTAINER_NAME} -p 3000:3000 ${IMAGE_NAME}
+                    
+                    # Attendre que l'application démarre
+                    sleep 10
+                '''
+            }
+        }
+        
+        stage('Health Check') {
+            steps {
+                echo 'Vérification de santé de l\'application...'
+                script {
+                    try {
+                        sh '''
+                            # Test de connectivité
+                            curl -f http://localhost:3000/health || exit 1
+                            echo "Application déployée avec succès et répond correctement"
+                        '''
+                    } catch (Exception e) {
+                        currentBuild.result = 'UNSTABLE'
+                        echo "Warning: Health check failed: ${e.getMessage()}"
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo 'Nettoyage des ressources temporaires...'
+            sh '''
+                # Nettoyer les images Docker non utilisées
+                docker image prune -f || true
+            '''
+        }
+        success {
+            echo 'Pipeline exécuté avec succès!'
+            echo "Application accessible sur: http://localhost:3000"
+        }
+        failure {
+            echo 'Le pipeline a échoué!'
+            sh '''
+                # Arrêter le conteneur en cas d'échec
+                docker stop ${CONTAINER_NAME} || true
+                docker rm ${CONTAINER_NAME} || true
+            '''
+        }
+    }
+}
