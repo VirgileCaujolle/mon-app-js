@@ -213,7 +213,7 @@ EOF
                     try {
                         sh '''
                             # Test de connectivité
-                            curl -f http://localhost:3000/ || exit 1
+                            curl -f http://localhost:3000/health || exit 1
                             echo "Application déployée avec succès et répond correctement"
                         '''
                     } catch (Exception e) {

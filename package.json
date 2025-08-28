@@ -9,7 +9,7 @@
     "copy-files": "mkdir -p dist && cp -r src/* dist/",
     "clean": "rm -rf dist node_modules"
   },
-  "devDependencies": {
+  "dependencies": {
     "express": "^4.18.0"
   }
 }
