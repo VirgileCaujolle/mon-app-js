@@ -38,7 +38,7 @@ pipeline {
             steps {
                 echo 'Installation des dépendances Node.js...'
                 sh '''
-                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "npm ci"
+                    docker run --rm -v $(pwd):/app -w /app node:18-alpine sh -c "npm install"
                 '''
             }
         }
